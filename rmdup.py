@@ -27,7 +27,7 @@ def file_exists(fname):
 	return os.path.exists(fname)
 
 
-class TestExists(unittest.TestCase):
+class Test_file_exists(unittest.TestCase):
 
 	def test_existing_file(self):
 		existing_file = os.path.join(TEST_DIRECTORY, 'existing_file')
