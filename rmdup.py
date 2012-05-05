@@ -126,18 +126,18 @@ class Test_TempDir(unittest.TestCase):
                 self.assertEquals(content, f.read())
 
 
-def same_file(fname1, fname2):
+def same_file_or_dir(path1, path2):
     try:
-        return os.stat(fname1) == os.stat(fname2)
+        return os.stat(path1) == os.stat(path2)
     except OSError:
         return False
 
 
-class Test_same_file(unittest.TestCase):
+class Test_same_file_or_dir(unittest.TestCase):
 
-    def test_same_file(self):
+    def test_same_file_or_dir(self):
         fname = EXISTING_FILE
-        self.assertTrue(same_file(fname, fname))
+        self.assertTrue(same_file_or_dir(fname, fname))
 
     def test_different_files_same_content_is_not_same(self):
         with TempDir() as d:
@@ -150,13 +150,13 @@ class Test_same_file(unittest.TestCase):
             self.assertTrue(file_exists(f1))
             self.assertTrue(file_exists(f2))
 
-            self.assertFalse(same_file(f1, f2))
+            self.assertFalse(same_file_or_dir(f1, f2))
 
     def  test_non_existing_files_are_not_same(self):
         # that is - no exceptions are raised!
         with TempDir() as d:
             f = d.subpath('non_existing_file')
-            self.assertFalse(same_file(f, f))
+            self.assertFalse(same_file_or_dir(f, f))
 
 
 def _read_block(file):
@@ -216,7 +216,7 @@ class Test_same_content(unittest.TestCase):
 
 
 def is_duplicate(fname1, fname2):
-    return (not same_file(fname1, fname2)) and same_content(fname1, fname2)
+    return (not same_file_or_dir(fname1, fname2)) and same_content(fname1, fname2)
 
 
 class Test_is_duplicate(unittest.TestCase):
@@ -237,9 +237,27 @@ class Test_is_duplicate(unittest.TestCase):
         self.assertFalse(is_duplicate(EXISTING_FILE, EXISTING_FILE))
 
 
-# is_duplicate(f1, f2)
-#     (not same_file) and same_content
-# treat_as_duplicate(orig_dir, duplicate_candidate, ignored_differences)
+def almost_duplicate(directory, duplicate_candidate, ignored_differences):
+    return not same_file_or_dir(directory, duplicate_candidate)
+
+
+class Test_almost_duplicate(unittest.TestCase):
+
+    def test_two_empty_dirs_are_duplicates(self):
+        with TempDir() as d:
+            dir1 = d.subpath('dir1')
+            dir2 = d.subpath('dir2')
+            os.mkdir(dir1)
+            os.mkdir(dir2)
+
+            self.assertTrue(almost_duplicate(dir1, dir2, []))
+
+    def test_same_directory_is_not_duplicate(self):
+        d = os.getcwd()
+        self.assertFalse(almost_duplicate(d, d, []))
+
+# almost_duplicate(orig_dir, duplicate_candidate, ignored_differences)
+#     not same(dir1, dir2)
 #     files(duplicate_candidate) - files(orig_dir) - ignored_differences = set()
 #     (file2 in ignored_differences) or is_duplicate(file1, file2) for all common files in orig_dir, duplicate_candidate
 #     duplicate_candidate has no subdirs
