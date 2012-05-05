@@ -15,6 +15,8 @@ TEST_DIRECTORY = os.path.join(SCRIPT_DIRECTORY, 'test')
 EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'existing_file')
 NON_EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'non_existing_file')
 
+READ_BUFFER_SIZE = 1024 ** 2
+
 
 class NotDuplicate(Exception):
 
@@ -63,7 +65,7 @@ class TempDir:
         dirname = os.path.dirname(filename)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
-        with open(filename, 'w') as f:
+        with open(filename, 'wb') as f:
             f.write(content)
 
 
@@ -110,6 +112,19 @@ class Test_TempDir(unittest.TestCase):
     def test_make_file_creates_a_file_with_two_subdirs(self):
         self.check_make_file('x/y/test_file')
 
+    def test_make_file_creates_a_file_in_binary_mode(self):
+        relpath = 'file'
+        with TempDir() as d:
+            fname = d.subpath(relpath)
+            self.assertFalse(file_exists(fname))
+            content = 'some\ntext\rcontent\r\n'
+
+            d.make_file(relpath, content)
+
+            self.assertTrue(file_exists(fname))
+            with open(fname, 'rb') as f:
+                self.assertEquals(content, f.read())
+
 
 def same_files(fname1, fname2):
     try:
@@ -144,11 +159,62 @@ class Test_same_files(unittest.TestCase):
             self.assertFalse(same_files(f, f))
 
 
+def _read_block(file):
+    return file.read(READ_BUFFER_SIZE)
 
-# class Test_same_content(unittest.TestCase):
+def same_content(fname1, fname2, read_block=_read_block):
+    try:
+        with open(fname1, 'rb') as f1:
+            with open(fname2, 'rb') as f2:
+                buff1 = True # just started
+                while buff1:
+                    buff1 = read_block(f1)
+                    buff2 = read_block(f2)
+                    if buff1 != buff2:
+                        return False
+        return True
+    except IOError:
+        return False
 
-#     def test_
-# same_content(f1, f2)
+
+class Test_same_content(unittest.TestCase):
+
+    def test_same_content(self):
+        with TempDir() as d:
+            content = 'same'
+            d.make_file('f1', content)
+            d.make_file('f2', content)
+
+            self.assertTrue(same_content(d.subpath('f1'), d.subpath('f2')))
+
+    def test_different_content(self):
+        with TempDir() as d:
+            d.make_file('f1', 'content\n')
+            d.make_file('f2', 'content\r\n')
+
+            self.assertFalse(same_content(d.subpath('f1'), d.subpath('f2')))
+
+    def test_same_file_multiple_reads(self):
+        with TempDir() as d:
+            d.make_file('f1', '12')
+            d.make_file('f2', '13')
+
+            reads = []
+
+            def counting_read_block(f):
+                buff = f.read(1)
+                reads.append(buff)
+                return buff
+
+            self.assertFalse(same_content(d.subpath('f1'), d.subpath('f2'), read_block=counting_read_block))
+            self.assertEquals(['1', '1', '2', '3'], reads)
+
+    def test_missing_files_are_not_same(self):
+        self.assertFalse(same_content(    EXISTING_FILE, NON_EXISTING_FILE))
+        self.assertFalse(same_content(NON_EXISTING_FILE,     EXISTING_FILE))
+        self.assertFalse(same_content(NON_EXISTING_FILE, NON_EXISTING_FILE))
+
+
 # is_duplicate(f1, f2)
 #     (not same_files) and same_content
 # treat_as_duplicate(orig_dir, duplicate_candidate, ignored_differences)
