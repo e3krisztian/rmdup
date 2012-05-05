@@ -413,22 +413,22 @@ def remove_duplicate(orig, duplicate, ignored_differences=None):
     if not os.path.exists(duplicate):
         return
 
-    if os.path.isdir(orig):
-        reason = not_duplicate_dir_reason(orig, duplicate, ignored_differences)
-        if reason is None:
-            print 'remove duplicate {0}'.format(duplicate)
+    isdir = os.path.isdir(orig)
+
+    if isdir:
+        reason_not_duplicate = not_duplicate_dir_reason(orig, duplicate, ignored_differences)
+    else:
+        reason_not_duplicate = not_duplicate_file_reason(orig, duplicate)
+
+    if reason_not_duplicate is None:
+        print 'remove duplicate {0}'.format(duplicate)
+        if isdir:
             shutil.rmtree(duplicate)
         else:
-            print reason
-            raise NotDuplicate(orig, duplicate)
-    else:
-        reason = not_duplicate_file_reason(orig, duplicate)
-        if reason is None:
-            print 'remove duplicate {0}'.format(duplicate)
             os.remove(duplicate)
-        else:
-            print reason
-            raise NotDuplicate(orig, duplicate)
+    else:
+        print reason_not_duplicate
+        raise NotDuplicate(orig, duplicate)
 
 
 class Test_remove_duplicate(unittest.TestCase):
