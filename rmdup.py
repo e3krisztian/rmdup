@@ -12,6 +12,8 @@ import argparse
 
 SCRIPT_DIRECTORY = os.path.abspath(os.path.dirname(__file__))
 TEST_DIRECTORY = os.path.join(SCRIPT_DIRECTORY, 'test')
+EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'existing_file')
+NON_EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'non_existing_file')
 
 
 class NotDuplicate(Exception):
@@ -31,12 +33,10 @@ def file_exists(fname):
 class Test_file_exists(unittest.TestCase):
 
     def test_existing_file(self):
-        existing_file = os.path.join(TEST_DIRECTORY, 'existing_file')
-        self.assertTrue(file_exists(existing_file))
+        self.assertTrue(file_exists(EXISTING_FILE))
 
     def test_non_existing_file(self):
-        non_existing_file = os.path.join(TEST_DIRECTORY, 'non_existing_file')
-        self.assertFalse(file_exists(non_existing_file))
+        self.assertFalse(file_exists(NON_EXISTING_FILE))
 
 
 class TempDir:
@@ -57,6 +57,14 @@ class TempDir:
 
     def subpath(self, relative_path):
         return os.path.join(self.tempdir, relative_path)
+
+    def make_file(self, fname, content):
+        filename = self.subpath(fname)
+        dirname = os.path.dirname(filename)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+        with open(filename, 'w') as f:
+            f.write(content)
 
 
 class Test_TempDir(unittest.TestCase):
@@ -81,25 +89,26 @@ class Test_TempDir(unittest.TestCase):
 
         self.assertFalse(file_exists(tempfile))
 
-
-def make_file(fname, content):
-    with open(fname, 'w') as f:
-        f.write(content)
-
-
-class Test_make_file(unittest.TestCase):
-
-    def test_make_file_creates_a_file(self):
+    def check_make_file(self, relpath):
         with TempDir() as d:
-            fname = d.subpath('test_file')
+            fname = d.subpath(relpath)
             self.assertFalse(file_exists(fname))
             content = 'some text content'
 
-            make_file(fname, content)
+            d.make_file(relpath, content)
 
             self.assertTrue(file_exists(fname))
             with open(fname) as f:
                 self.assertEquals(content, f.read())
+
+    def test_make_file_creates_a_file(self):
+        self.check_make_file('test_file')
+
+    def test_make_file_creates_a_file_in_a_non_existent_subdir(self):
+        self.check_make_file('x/test_file')
+
+    def test_make_file_creates_a_file_with_two_subdirs(self):
+        self.check_make_file('x/y/test_file')
 
 
 def same_files(fname1, fname2):
@@ -112,17 +121,16 @@ def same_files(fname1, fname2):
 class Test_same_files(unittest.TestCase):
 
     def test_same_file(self):
-        existing_file = os.path.join(TEST_DIRECTORY, 'existing_file')
-        fname = existing_file
+        fname = EXISTING_FILE
         self.assertTrue(same_files(fname, fname))
 
     def test_different_files_same_content_is_not_same(self):
         with TempDir() as d:
+            content = 'some text'
+            d.make_file('f1', content)
+            d.make_file('f2', content)
             f1 = d.subpath('f1')
             f2 = d.subpath('f2')
-            content = 'some text'
-            make_file(f1, content)
-            make_file(f2, content)
 
             self.assertTrue(file_exists(f1))
             self.assertTrue(file_exists(f2))
@@ -136,11 +144,19 @@ class Test_same_files(unittest.TestCase):
             self.assertFalse(same_files(f, f))
 
 
-same_content(f1, f2)
-is_duplicate(f1, f2)
-    (not same_files) and same_content
-remove_file(f)
-remove_empty_subdirs(path)
+
+# class Test_same_content(unittest.TestCase):
+
+#     def test_
+# same_content(f1, f2)
+# is_duplicate(f1, f2)
+#     (not same_files) and same_content
+# treat_as_duplicate(orig_dir, duplicate_candidate, ignored_differences)
+#     files(duplicate_candidate) - files(orig_dir) - ignored_differences = set()
+#     (file2 in ignored_differences) or is_duplicate(file1, file2) for all common files in orig_dir, duplicate_candidate
+#     duplicate_candidate has no subdirs
+# remove_file(f)
+# remove_empty_subdirs(path)
 
 
 def filesize(fname):
