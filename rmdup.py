@@ -219,26 +219,36 @@ class Test_same_content(unittest.TestCase):
         self.assertFalse(same_content(NON_EXISTING_FILE, NON_EXISTING_FILE))
 
 
-def is_duplicate(fname1, fname2):
-    return (not same_file_or_dir(fname1, fname2)) and same_content(fname1, fname2)
+def not_duplicate_file_reason(fname1, fname2):
+    if same_file_or_dir(fname1, fname2):
+        return '"{0}" and "{1}" are referencing the same file'.format(fname1, fname2)
+
+    if not same_content(fname1, fname2):
+        return 'Files "{0}" and "{1}" differ'.format(fname1, fname2)
 
 
-class Test_is_duplicate(unittest.TestCase):
+    return None
+
+
+class Test_not_duplicate_file_reason(unittest.TestCase):
 
     def test_two_files_same_content_is_duplicate(self):
         with TempDir() as d:
             d.make_file('1', '')
             d.make_file('2', '')
-            self.assertTrue(is_duplicate(d.subpath('1'), d.subpath('2')))
+            reason = not_duplicate_file_reason(d.subpath('1'), d.subpath('2'))
+            self.assertIsNone(reason)
 
     def test_different_content_not_duplicate(self):
         with TempDir() as d:
             d.make_file('1', '')
             d.make_file('2', '2')
-            self.assertFalse(is_duplicate(d.subpath('1'), d.subpath('2')))
+            reason = not_duplicate_file_reason(d.subpath('1'), d.subpath('2'))
+            self.assertIn('differ', reason)
 
     def test_same_file_is_not_duplicate(self):
-        self.assertFalse(is_duplicate(EXISTING_FILE, EXISTING_FILE))
+        reason = not_duplicate_file_reason(EXISTING_FILE, EXISTING_FILE)
+        self.assertIn('referencing the same file', reason)
 
 
 def _make_skip_path_tree(path_list):
@@ -316,7 +326,7 @@ def not_duplicate_dir_reason(directory, duplicate_candidate, ignored_differences
     '''
 
     if same_file_or_dir(directory, duplicate_candidate):
-        return '"{0}" and "{1}" are referencing the same file or directory'.format(directory, duplicate_candidate)
+        return '"{0}" and "{1}" are referencing the same directory'.format(directory, duplicate_candidate)
 
     possible_duplicate_files = set(files_in(duplicate_candidate, ignored_differences))
 
@@ -349,7 +359,7 @@ class Test_not_duplicate_dir_reason(unittest.TestCase):
     def test_same_directory_is_not_duplicate(self):
         d = os.getcwd()
         reason = not_duplicate_dir_reason(d, d, [])
-        self.assertIn('referencing the same file or directory', reason)
+        self.assertIn('referencing the same directory', reason)
 
     def test_candidate_has_extra_file_not_duplicate(self):
         with TempDir() as d:
@@ -412,10 +422,12 @@ def remove_duplicate(orig, duplicate, ignored_differences=None):
             print reason
             raise NotDuplicate(orig, duplicate)
     else:
-        if is_duplicate(orig, duplicate):
+        reason = not_duplicate_file_reason(orig, duplicate)
+        if reason is None:
             print 'remove duplicate {0}'.format(duplicate)
             os.remove(duplicate)
         else:
+            print reason
             raise NotDuplicate(orig, duplicate)
 
 
