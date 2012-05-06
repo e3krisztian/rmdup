@@ -18,12 +18,13 @@ READ_BUFFER_SIZE = 1024 ** 2
 
 class NotDuplicate(Exception):
 
-    def __init__(self, orig, duplicate):
+    def __init__(self, orig, duplicate, reason):
         self.orig = orig
         self.duplicate = duplicate
+        self.reason = reason
 
     def __str__(self):
-        return 'NotDuplicate({self.orig}, {self.duplicate})'.format(self=self)
+        return '"{self.orig}" and "{self.duplicate}" are not duplicates: {self.reason}'.format(self=self)
 
 
 def file_exists(fname):
@@ -224,7 +225,7 @@ def not_duplicate_file_reason(fname1, fname2):
         return '"{0}" and "{1}" are referencing the same file'.format(fname1, fname2)
 
     if not same_content(fname1, fname2):
-        return 'Files "{0}" and "{1}" differ'.format(fname1, fname2)
+        return 'files "{0}" and "{1}" differ'.format(fname1, fname2)
 
 
     return None
@@ -255,9 +256,9 @@ def _make_skip_path_tree(path_list):
     path_list = path_list or []
     skip_path_tree = {}
 
-    for path in path_list:
+    for skip_path in path_list:
         tree = skip_path_tree
-        for directory in path.split(os.path.sep):
+        for path in skip_path.split(os.path.sep):
             tree[path] = tree.get(path, {})
             tree = tree[path]
         tree.clear()
@@ -274,17 +275,17 @@ def _files_in(directory, skip_path_tree):
     '''
 
     files_and_dirs = os.listdir(directory)
-    for fd in files_and_dirs:
-        if fd in skip_path_tree and 0 == len(skip_path_tree[fd]):
+    for path in files_and_dirs:
+        if path in skip_path_tree and 0 == len(skip_path_tree[path]):
             # leaf in skip path tree
             continue
 
-        path = os.path.join(directory, fd)
-        if os.path.isdir(path):
-            for f in _files_in(path, skip_path_tree.get(directory, {})):
+        full_path = os.path.join(directory, path)
+        if os.path.isdir(full_path):
+            for f in _files_in(full_path, skip_path_tree.get(path, {})):
                 yield f
         else:
-            yield path
+            yield full_path
 
 
 def files_in(directory, skip_paths=None):
@@ -313,7 +314,7 @@ class Test_files_in(unittest.TestCase):
             d.make_file('f', '')
             d.make_file('skipped/dir/g', '')
 
-            self.assertEquals(set(['f']), set(files_in(d.path, skip_paths=['skipped'])))
+            self.assertEquals(set(['f']), set(files_in(d.path, skip_paths=['skipped/dir'])))
 
 
 def not_duplicate_dir_reason(directory, duplicate_candidate, ignored_differences):
@@ -332,13 +333,13 @@ def not_duplicate_dir_reason(directory, duplicate_candidate, ignored_differences
 
     extra_files = possible_duplicate_files - set(files_in(directory))
     if extra_files:
-        return 'Duplicate candidate contains extra non-duplicate file[s]: {0}'.format(sorted(extra_files))
+        return 'duplicate candidate contains extra non-duplicate file[s]: {0}'.format(sorted(extra_files))
 
     for f in possible_duplicate_files:
         fname = os.path.join(directory, f)
         candidate_fname = os.path.join(duplicate_candidate, f)
         if not same_content(fname, candidate_fname):
-            return 'Files "{0}" and "{1}" differ'.format(fname, candidate_fname)
+            return 'files "{0}" and "{1}" differ'.format(fname, candidate_fname)
 
     return None
 
@@ -371,7 +372,7 @@ class Test_not_duplicate_dir_reason(unittest.TestCase):
             d.make_file('candidate_dir/extra_file', '')
 
             reason = not_duplicate_dir_reason(directory, candidate_dir, [])
-            self.assertIn('Duplicate candidate contains extra non-duplicate file[s]:', reason)
+            self.assertIn('duplicate candidate contains extra non-duplicate file[s]:', reason)
 
     def test_candidate_has_a_file_with_different_content_not_duplicate(self):
         with TempDir() as d:
@@ -409,11 +410,21 @@ class Test_not_duplicate_dir_reason(unittest.TestCase):
             self.assertIsNone(reason)
 
 
-def remove_duplicate(orig, duplicate, ignored_differences=None):
+def remove_file_or_dir(path):
+    isdir = os.path.isdir(path)
+
+    print 'removing {0}'.format(path)
+    if isdir:
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+
+
+def process_duplicate(orig, duplicate, ignored_differences=None, process=remove_file_or_dir):
     if not os.path.exists(duplicate):
         return
 
-    isdir = os.path.isdir(orig)
+    isdir = os.path.isdir(duplicate)
 
     if isdir:
         reason_not_duplicate = not_duplicate_dir_reason(orig, duplicate, ignored_differences)
@@ -421,17 +432,12 @@ def remove_duplicate(orig, duplicate, ignored_differences=None):
         reason_not_duplicate = not_duplicate_file_reason(orig, duplicate)
 
     if reason_not_duplicate is None:
-        print 'remove duplicate {0}'.format(duplicate)
-        if isdir:
-            shutil.rmtree(duplicate)
-        else:
-            os.remove(duplicate)
+        process(duplicate)
     else:
-        print reason_not_duplicate
-        raise NotDuplicate(orig, duplicate)
+        raise NotDuplicate(orig, duplicate, reason_not_duplicate)
 
 
-class Test_remove_duplicate(unittest.TestCase):
+class Test_process_duplicate(unittest.TestCase):
 
     def test_duplicate_file_is_removed(self):
         with TempDir() as d:
@@ -440,7 +446,7 @@ class Test_remove_duplicate(unittest.TestCase):
 
             orig = d.subpath('1')
             duplicate = d.subpath('2')
-            remove_duplicate(orig, duplicate)
+            process_duplicate(orig, duplicate)
 
             self.assertTrue(file_exists(orig))
             self.assertFalse(file_exists(duplicate))
@@ -453,7 +459,7 @@ class Test_remove_duplicate(unittest.TestCase):
             orig = d.subpath('1')
             duplicate = d.subpath('2')
             try:
-                remove_duplicate(orig, duplicate)
+                process_duplicate(orig, duplicate)
                 self.fail('NotDuplicate not raised')
             except NotDuplicate:
                 pass
@@ -469,7 +475,7 @@ class Test_remove_duplicate(unittest.TestCase):
 
             orig = d.subpath('1')
             duplicate = d.subpath('2')
-            remove_duplicate(orig, duplicate, ['extra'])
+            process_duplicate(orig, duplicate, ['extra'])
 
             self.assertTrue(file_exists(orig))
             self.assertFalse(file_exists(duplicate))
@@ -483,7 +489,7 @@ class Test_remove_duplicate(unittest.TestCase):
             orig = d.subpath('1')
             duplicate = d.subpath('2')
             try:
-                remove_duplicate(orig, duplicate)
+                process_duplicate(orig, duplicate)
                 self.fail('NotDuplicate not raised')
             except NotDuplicate:
                 pass
@@ -497,10 +503,29 @@ class Test_remove_duplicate(unittest.TestCase):
 
             orig = d.subpath('1')
             duplicate = d.subpath('2')
-            remove_duplicate(orig, duplicate)
+            process_duplicate(orig, duplicate)
 
             self.assertTrue(file_exists(orig))
             self.assertFalse(file_exists(duplicate))
+
+    def test_removal_is_done_with_the_process_parameter(self):
+        with TempDir() as d:
+            d.make_file('1', 'asd')
+            d.make_file('2', 'asd')
+
+            orig = d.subpath('1')
+            duplicate = d.subpath('2')
+            process_called = set()
+            def check_process_called(arg):
+                process_called.add(arg)
+
+            process_duplicate(orig, duplicate, process=check_process_called)
+
+            self.assertEqual(process_called, set([duplicate]))
+            self.assertTrue(file_exists(orig))
+            # it was not removed in our version of process!
+            self.assertTrue(file_exists(duplicate))
+
 
 
 orig_duplicate = [
@@ -511,22 +536,27 @@ orig_duplicate = [
 
 ]
 
-def main():
-    for orig, dup in orig_duplicate:
-        try:
-            remove_duplicate(orig, dup)
-        except NotDuplicate:
-            print 'Skipped {0}'.format((orig, dup))
+
+def print_duplicate(path):
+    print 'in non dry-run mode, "{0}" would be removed'.format(path)
 
 
 def mkparser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-t', '--test', action='store_const', const=unittest.main, dest='func', default=main)
+    parser = argparse.ArgumentParser(
+        description='Determine if a file/directory is duplicate of another (with some relax) and optionally remove the duplicate')
+    parser.add_argument('main', help='primary location - will be kept')
+    parser.add_argument('duplicate', help='location of duplicate - may be removed if contains no unknown change')
+    parser.add_argument('ignored_differences', nargs='*', help='extra or changed files in duplicate, that are known and can be removed')
+    parser.add_argument('-n', '--dry-run', dest='duplicate_processor', const=print_duplicate, default=remove_file_or_dir, action='store_const',
+        help='just say if something would be removed instead of actually removing it')
     return parser
 
 
 if __name__ == '__main__':
     args = mkparser().parse_args()
-    sys.argv = sys.argv[:1] # + ['-v']
-    args.func()
+    try:
+        process_duplicate(args.main, args.duplicate, args.ignored_differences, args.duplicate_processor)
+    except NotDuplicate as e:
+        print e
+
 # /opt/sfk dup -file .mov
