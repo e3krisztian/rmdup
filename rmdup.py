@@ -100,7 +100,7 @@ class Test_TempDir(unittest.TestCase):
 
             self.assertTrue(file_exists(fname))
             with open(fname) as f:
-                self.assertEquals(content, f.read())
+                self.assertEqual(content, f.read())
 
     def test_make_file_creates_a_file(self):
         self.check_make_file('test_file')
@@ -122,7 +122,7 @@ class Test_TempDir(unittest.TestCase):
 
             self.assertTrue(file_exists(fname))
             with open(fname, 'rb') as f:
-                self.assertEquals(content, f.read())
+                self.assertEqual(content, f.read())
 
 
 def same_file_or_dir(path1, path2):
@@ -212,7 +212,7 @@ class Test_same_content(unittest.TestCase):
                 return buff
 
             self.assertFalse(same_content(d.subpath('f1'), d.subpath('f2'), read_block=counting_read_block))
-            self.assertEquals(['1', '1', '2', '3'], reads)
+            self.assertEqual(['1', '1', '2', '3'], reads)
 
     def test_missing_files_are_not_same(self):
         self.assertFalse(same_content(    EXISTING_FILE, NON_EXISTING_FILE))
@@ -300,21 +300,21 @@ class Test_files_in(unittest.TestCase):
             for f in files:
                 d.make_file(f, '')
 
-            self.assertEquals(files, set(files_in(d.path)))
+            self.assertEqual(files, set(files_in(d.path)))
 
     def test_file_in_skip_path_not_in_result(self):
         with TempDir() as d:
             d.make_file('f', '')
             d.make_file('f_skipped', '')
 
-            self.assertEquals(set(['f']), set(files_in(d.path, skip_paths=['f_skipped'])))
+            self.assertEqual(set(['f']), set(files_in(d.path, skip_paths=['f_skipped'])))
 
     def test_file_in_directory_on_skip_path_not_in_result(self):
         with TempDir() as d:
             d.make_file('f', '')
             d.make_file('skipped/dir/g', '')
 
-            self.assertEquals(set(['f']), set(files_in(d.path, skip_paths=['skipped/dir'])))
+            self.assertEqual(set(['f']), set(files_in(d.path, skip_paths=['skipped/dir'])))
 
 
 def not_duplicate_dir_reason(directory, duplicate_candidate, ignored_differences):
@@ -422,7 +422,7 @@ def remove_file_or_dir(path):
 
 def process_duplicate(orig, duplicate, ignored_differences=None, process=remove_file_or_dir):
     if not os.path.exists(duplicate):
-        return
+        raise NotDuplicate(orig, duplicate, '"{0}" does not exist'.format(duplicate))
 
     isdir = os.path.isdir(duplicate)
 
@@ -497,13 +497,14 @@ class Test_process_duplicate(unittest.TestCase):
             self.assertTrue(file_exists(orig))
             self.assertTrue(file_exists(duplicate))
 
-    def test_duplicate_does_not_exist_raises_no_error(self):
+    def test_duplicate_does_not_exist_raises_error(self):
         with TempDir() as d:
             d.make_file('1/f', 'asd')
 
             orig = d.subpath('1')
             duplicate = d.subpath('2')
-            process_duplicate(orig, duplicate)
+            self.assertRaises(NotDuplicate,
+                lambda: process_duplicate(orig, duplicate))
 
             self.assertTrue(file_exists(orig))
             self.assertFalse(file_exists(duplicate))
@@ -547,7 +548,7 @@ def mkparser():
     parser.add_argument('main', help='primary location - will be kept')
     parser.add_argument('duplicate', help='location of duplicate - may be removed if contains no unknown change')
     parser.add_argument('ignored_differences', nargs='*', help='extra or changed files in duplicate, that are known and can be removed')
-    parser.add_argument('-n', '--dry-run', dest='duplicate_processor', const=print_duplicate, default=remove_file_or_dir, action='store_const',
+    parser.add_argument('-n', '--dry-run', dest='duplicate_processor', default=remove_file_or_dir, const=print_duplicate, action='store_const',
         help='just say if something would be removed instead of actually removing it')
     return parser
 
