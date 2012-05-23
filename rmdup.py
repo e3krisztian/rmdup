@@ -2,7 +2,6 @@
 import argparse
 import os
 import shutil
-import sys
 
 import tempfile
 import unittest
@@ -13,7 +12,7 @@ TEST_DIRECTORY = os.path.join(SCRIPT_DIRECTORY, 'test')
 EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'existing_file')
 NON_EXISTING_FILE = os.path.join(TEST_DIRECTORY, 'non_existing_file')
 
-READ_BUFFER_SIZE = 1024 ** 2
+READ_BUFFER_SIZE = 100 * 1024 ** 2
 
 
 class NotDuplicate(Exception):
@@ -161,12 +160,21 @@ class Test_same_file_or_dir(unittest.TestCase):
 def _read_block(file):
     return file.read(READ_BUFFER_SIZE)
 
-def same_content(fname1, fname2, read_block=_read_block):
-    # sizes must match
+
+# FIXME: test?
+def same_size(fname1, fname2):
     try:
         if os.path.getsize(fname1) != os.path.getsize(fname2):
             return False
     except OSError:
+        return False
+
+    return True
+
+
+def same_content(fname1, fname2, read_block=_read_block):
+    # sizes must match
+    if not same_size(fname1, fname2):
         return False
 
     # compare contents
@@ -335,12 +343,22 @@ def not_duplicate_dir_reason(directory, duplicate_candidate, ignored_differences
     if extra_files:
         return 'duplicate candidate contains extra non-duplicate file[s]: {0}'.format(sorted(extra_files))
 
+    # FIXME: DRY & test
+    for f in possible_duplicate_files:
+        fname = os.path.join(directory, f)
+        candidate_fname = os.path.join(duplicate_candidate, f)
+        if not same_size(fname, candidate_fname):
+            return 'sizes of files "{0}" and "{1}" differ'.format(fname, candidate_fname)
+
+    print 'sizes match, comparing content'
+
     for f in possible_duplicate_files:
         fname = os.path.join(directory, f)
         candidate_fname = os.path.join(duplicate_candidate, f)
         if not same_content(fname, candidate_fname):
             return 'files "{0}" and "{1}" differ'.format(fname, candidate_fname)
 
+    # they are acceptable duplicates
     return None
 
 
@@ -526,16 +544,6 @@ class Test_process_duplicate(unittest.TestCase):
             self.assertTrue(file_exists(orig))
             # it was not removed in our version of process!
             self.assertTrue(file_exists(duplicate))
-
-
-
-orig_duplicate = [
-("Konyv/collections/1770 db e-konyv", "disks/Csalad/Books/1770 db e-konyv"),
-("Konyv/collections/Könyv/_Scifi", "disks/Csalad/Books/Könyv/_Scifi"),
-# ("Mentesek/2006/xr", "disks/Archive1/regi-linux/xr"),
-("Mentesek/2006/xr", "disks/Csalad/Backups/2006/xr"),
-
-]
 
 
 def print_duplicate(path):
